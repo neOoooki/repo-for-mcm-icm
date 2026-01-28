@@ -1,0 +1,268 @@
+\section{Introduction}
+
+
+\subsection{Problem Background}
+
+
+
+
+
+
+
+\subsection{Restatement of the Problem}
+
+\noindent Considering the background information and restricted conditions identified in the problem statement, we need to solve the following problems:
+\begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item Develop a model to describe the frequency of stair usage.
+    \item Create a model to determine whether a certain direction of travel was favored.
+\end{itemize}
+
+\begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item Develop a model to determine whether people traveled single file or side by side.
+    \item Build a model to evaluate whether the observed wear matches historical and environmental factors.
+    \item Create a model to estimate the age of the stairwell and its reliability.
+    \item Design a model to identify signs of repairs or renovations.
+    \item Determine whether the wear is consistent with materials from specific sources.
+    \item Estimate typical usage and identify whether heavy short-term or prolonged lighter usage fits the observed patterns.
+\end{itemize}
+
+
+
+
+
+
+
+\subsection{Our Work}
+
+\noindent In this paper, we carried out the following work to study stair usage frequency, service life, current condition, and pedestrian behavior patterns when using the stairs.
+\begin{itemize}[label=\Large\ding{226},leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item \textbf{Task 1: Model Preparation}\\
+    We determined material and environmental conditions of the target stairs, applied computer vision to obtain and process data, and fitted the wear depth distribution.
+    
+    \item \textbf{Task 2: Stair Wear Analysis Model}\\
+    We modeled pedestrian traffic to characterize usage frequency, inferred preferred walking direction via changes in wear distribution, and computed pedestrian density from traffic flow to judge single-file or side-by-side walking.
+    
+    \item \textbf{Task 3:}\\
+    \begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+        \item Analyze the relation among stair age, wear distribution, and pedestrian traffic.
+        \item Compute theoretical wear from traffic and compare with measured wear; assess error.
+        \item Estimate stair age from wear–traffic relationships and evaluate reliability.
+        \item Identify signs of repairs or renovations via coefficient changes and verification.
+        \item Check material consistency with presumed sources and verify with features.
+        \item Estimate typical usage; distinguish heavy short-term vs. prolonged lighter usage.
+    \end{itemize}
+\end{itemize}
+\section{Assumptions and Justifications}
+
+\begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item \textbf{Assumption 1: 示例标题}
+    
+    \textbf{Justification:} 示例文本。
+    
+    \item \textbf{Assumption 2: 示例标题}
+    
+    \textbf{Justification:} 示例文本。
+    
+    \item \textbf{Assumption 3: 示例标题}
+    
+    \textbf{Justification:} 示例文本。
+    
+    \item \textbf{Assumption 4: 示例标题}
+    
+    \textbf{Justification:} 示例文本。
+\end{itemize}
+
+
+
+
+
+
+
+\newpage
+\section{Notations}
+	The key mathematical notations used in this paper are listed in Table \ref{tab:notations}.
+
+% 表格开始
+\begin{table}[H]
+	\centering
+	% 设置标题格式：加粗
+	\captionsetup{font=bf} 
+	\caption{Notations used in this paper}
+	\label{tab:notations}
+	
+	% 增加行高，使表格看起来更舒展（类似图片效果）
+	\renewcommand{\arraystretch}{1.4}
+	
+	% 定义列格式：|c|c|c| 表示三列居中，且有竖线分隔
+	\begin{tabular}{|c|c|c|}
+		% 顶部粗线 (自定义粗细为1.5pt)
+		\noalign{\hrule height 1.5pt}
+		
+		% 表头行：灰色背景，加粗斜体文字
+		\rowcolor{gray!30} 
+		\textit{\textbf{Symbols}} & \textit{\textbf{Definition}} & \textit{\textbf{Units}} \\
+		
+		\hline
+		
+		% 内容行
+		$d(x,y)$ & The wear depth at each location $(x, y)$ & $m$ \\
+		
+		$N$ & Pedestrian flow & $people/s$ \\
+		
+		$k$ & Wear coefficients (also called Archard's constant) & / \\
+		
+		$T$ & The time since the steps were completed & $day$ \\
+		
+		$W$ & The width of the steps & $m$ \\
+		
+		$L$ & The length of the steps & $m$ \\
+		
+		$A_i$ & The area of the $i$-th step & $m^2$ \\
+		
+		$n$ & The total number of steps & / \\
+		
+		$\rho$ & The pedestrian density & $people/m^2$ \\
+		
+		$v$ & The velocity vector of pedestrians & $m/s$ \\
+		
+		$\nabla \cdot (\rho v)$ & The flux divergence & / \\
+		
+		$b$ & Experience factor & / \\
+		
+		% 底部粗线
+		\noalign{\hrule height 1.5pt}
+	\end{tabular}
+	
+	% 表格下方的注释（左对齐，斜体）
+	\vspace{0.2cm} % 与表格的间距
+	\begin{minipage}{0.9\textwidth} % 限制宽度以匹配表格视觉
+		\textit{*There are some variables that are not listed here and will be discussed in detail below.}
+	\end{minipage}
+\end{table}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\newpage
+\section{Model Preparation}
+\subsection{Data Processing}
+
+\noindent We selected typical ancient architectural stairs as the study object. Computer vision was used to obtain and process images.
+\begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item \textbf{Step 1: Image processing}\\
+    Original images were converted to grayscale and denoised via Gaussian filtering.
+\end{itemize}
+
+\begin{itemize}[label=\Large\textbullet,leftmargin=*,itemsep=0.6ex,topsep=0.5ex]
+    \item \textbf{Step 2: Feature extraction}\\
+    Edge detection and key feature extraction were performed on the processed images.
+    \item \textbf{Step 3: Data processing}\\
+    Structured datasets were formed for subsequent modeling and analysis.
+\end{itemize}
+
+\subsection{Solution of .....}
+
+
+
+\newpage
+\section{Model I:}
+\setlength{\parindent}{2em} % 设置缩进为2个字符宽度
+
+
+The core symbols and their definitions used in this study are summarized in Table~\ref{table:notations}, providing an overview of the key parameters and their related meanings.
+
+
+
+
+
+\begin{table}[h]
+	\centering
+	\caption{table}
+	\label{table}
+	\begin{tabular}{lcr}
+		\toprule
+		A&B&C\\
+		\midrule
+		1&2&3\\
+		4&5&6\\
+		\bottomrule		
+	\end{tabular}
+\end{table}
+
+
+The core symbols and their definitions used in this study are summarized in Table\ref{table}, providing an overview of the key parameters and their related meanings.
+
+\begin{table}[h]
+	\centering
+	\caption{table}
+
+	
+	
+	\begin{tabular}{
+			>{\centering\arraybackslash}p{0.2\linewidth} >{\centering\arraybackslash}p{0.6\linewidth}
+			>{\centering\arraybackslash}p{0.1\linewidth}
+			} 
+		
+		
+		\toprule 
+		
+		
+		Symbol& Description&C\\ 
+		
+		
+		\midrule 
+		
+		$\text{PSNR}$    & Peak signal-to-noise ratio for image quality evaluation&C \\
+		
+
+		
+		\bottomrule
+	\end{tabular}
+\end{table}
+
+
+
+
+
+\subsection{Proof of Lagrange Mean Value Theorem}
+\subsubsection{Step 1: Construct the Auxiliary Function}
+To apply Rolle's Theorem, we construct an auxiliary function $F(x)$, whose geometric meaning is "the difference between the ordinate of the curve $y=f(x)$ and the ordinate of the chord $AB$" (where $A(a,f(a))$ and $B(b,f(b))$ are the endpoints of the curve on $[a,b]$).
+
+The equation of the straight line passing through $A$ and $B$ is:
+\[
+y - f(a) = \frac{f(b) - f(a)}{b - a}(x - a)
+\]
+which can be rewritten as:
+\[
+y = f(a) + \frac{f(b) - f(a)}{b - a}(x - a)
+\]
+
+Thus, the auxiliary function is defined as:
+\[
+F(x) = f(x) - \left[ f(a) + \frac{f(b) - f(a)}{b - a}(x - a) \right]
+\]
+
+
+To apply Rolle's Theorem, we construct an auxiliary function $F(x)$, whose geometric meaning is "the difference between
+
+
+$$F(x)$$
+\begin{equation}
+	y = f(a) + \frac{f(b) - f(a)}{b - a}(x - a)
+\end{equation}

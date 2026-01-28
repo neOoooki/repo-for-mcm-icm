@@ -1,0 +1,105 @@
+\documentclass{mcmthesis}  % 当使用 CTeX 套装时请注释上一行使用该行的设置
+\mcmsetup{tstyle=\color{red}\bfseries,%修改题号，队号的颜色和加粗显示，黑色可以修改为 black
+tcn = 2611613, problem =A, %修改队号，参赛题号
+sheet = true, titleinsheet = true, keywordsinsheet = true,
+titlepage = false, abstract = true}
+\usepackage{float}
+%四款字体可以选择
+\usepackage{times}
+%\usepackage{newtxtext}
+%\usepackage{palatino}
+%\usepackage{txfonts}
+
+\usepackage[utf8]{inputenc}
+\usepackage{indentfirst}  %首行缩进，注释掉，首行就不再缩进。
+\usepackage{lipsum}
+
+\usepackage{ctex}  %这个包是确保可以用中文进行打草稿的
+
+% 必备宏包
+\usepackage{amsmath}  % 数学公式
+\usepackage{amssymb}  % 数学符号
+\usepackage[table]{xcolor} % 表格颜色
+\usepackage{float}    %以此使用 [H] 固定表格位置
+\usepackage{array}    % 调整表格行高
+\usepackage{caption}  % 设置标题格式
+
+\usepackage{amssymb} 
+\usepackage{pifont} % 提供了大量精美图标
+\usepackage{xcolor} % 甚至可以加颜色
+\usepackage{enumitem}
+\usepackage{tocloft}
+\renewcommand{\cftbeforetoctitleskip}{0pt}
+\renewcommand{\cftaftertoctitleskip}{0pt}
+\renewcommand{\cfttoctitlefont}{\Large\bfseries}
+\renewcommand{\contentsname}{Contents}
+\renewcommand{\abstractname}{Abstract}
+\renewcommand{\cftsecfont}{\bfseries}
+\renewcommand{\cftsecpagefont}{\bfseries}
+\renewcommand{\cftsubsecfont}{\normalfont}
+\renewcommand{\cftsubsecpagefont}{\normalfont}
+\setlength{\cftbeforesecskip}{2pt}
+\setlength{\cftbeforesubsecskip}{0.5pt}
+\setlength{\cftbeforesubsubsecskip}{0pt}
+\setlength{\cftsecindent}{0pt}
+\setlength{\cftsubsecindent}{1.5em}
+\setlength{\cftsubsubsecindent}{3em}
+\renewcommand{\cftdotsep}{2}
+\renewcommand{\cftsecnumwidth}{2.5em}
+\setcounter{tocdepth}{2}
+
+%换行且有缩进用\\\indent
+\title{our's title}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+\begin{document}
+
+
+\input{0.abstract}
+
+\maketitle
+
+\makeatletter
+\renewcommand\tableofcontents{%
+    \centerline{\normalfont\Large\bfseries\sffamily\contentsname
+        \@mkboth{%
+           \MakeUppercase\contentsname}{\MakeUppercase\contentsname}}%
+    \vskip 1.5ex%
+    \@starttoc{toc}%
+    }
+\makeatother
+\tableofcontents
+
+
+\newpage
+\input{1.part-1}
+
+
+\input{2.part-2}
+
+\newpage
+\input{3.part-3}
+
+
+\newpage
+\input{4.AI}
+
+
+
+
+
+\end{document}
