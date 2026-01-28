@@ -39,18 +39,30 @@ class StairWearMVP:
         self.stair_grid = np.zeros((self.ny, self.nx))
         
         # Footprint params
-        self.foot_length = 400
+        self.foot_length = 300
         self.foot_width = 100
-        self.kernel = None
-        self.single_step_wear_kernel = None # Actual wear depth map for one step
+        self.wear_kernel_up = None
+        self.wear_kernel_down = None
 
-    def create_footprint_kernel(self):
+    def init_kernels(self):
+        """Initialize both up and down kernels."""
+        _, self.wear_kernel_up = self.create_footprint_kernel(direction='up')
+        _, self.wear_kernel_down = self.create_footprint_kernel(direction='down')
+
+    def create_footprint_kernel(self, direction='up'):
         """
-        Creates a footprint pressure kernel.
-        Dimensions: 400mm (Y) x 100mm (X).
+        Creates a footprint pressure kernel based on direction.
+        Dimensions: 300mm (Y) x 100mm (X).
+        
+        Args:
+            direction (str): 'up' or 'down'. 
+                             'up': Higher pressure on ball (toes), impact factor 1.8.
+                             'down': Higher pressure on heel, impact factor 3.0.
+        Returns:
+            tuple: (kernel, wear_kernel)
         """
-        k_ny = int(self.foot_length / self.resolution) # 40
-        k_nx = int(self.foot_width / self.resolution)  # 10
+        k_ny = int(self.foot_length / self.resolution) 
+        k_nx = int(self.foot_width / self.resolution)
         
         # Create a coordinate grid for the kernel
         # Normalized coordinates -1 to 1
@@ -59,47 +71,51 @@ class StairWearMVP:
         X, Y = np.meshgrid(x, y)
         
         # Design a pressure distribution
-        # Let's simulate a heel and a ball of the foot using Gaussians
         # Heel at bottom (negative Y), Ball at top (positive Y)
+        # Base Gaussians
+        Z_heel_base = np.exp(-((X)**2 + (Y + 0.5)**2) / 0.1)
+        Z_ball_base = np.exp(-((X)**2 + (Y - 0.5)**2) / 0.15)
         
-        # Heel
-        Z_heel = np.exp(-((X)**2 + (Y + 0.5)**2) / 0.1)
+        impact_factor = 1.0
         
-        # Ball of foot
-        Z_ball = np.exp(-((X)**2 + (Y - 0.5)**2) / 0.15)
-        
-        raw_kernel = Z_heel + Z_ball
+        if direction == 'up':
+            # Up: Ball dominant (Front of foot)
+            # Pressure larger at ball
+            raw_kernel = 0.8 * Z_heel_base + 1.2 * Z_ball_base
+            impact_factor = 1.8
+            
+        elif direction == 'down':
+            # Down: Heel dominant
+            # Pressure larger at heel
+            raw_kernel = 1.5 * Z_heel_base + 0.8 * Z_ball_base
+            impact_factor = 3.0
+        else:
+            raw_kernel = Z_heel_base + Z_ball_base
         
         # Normalize raw kernel so that the sum of forces equals walker weight
-        # Force = Pressure * Area
-        # Total Force = Sum(P_ij * CellArea) = Weight
-        # P_ij = Scale * raw_kernel_ij
-        # Scale * Sum(raw_kernel_ij) * (res * res) = Weight
-        
         cell_area_mm2 = self.resolution ** 2
         total_raw_sum = np.sum(raw_kernel)
         
         if total_raw_sum > 0:
             # Scale factor to convert raw kernel values to Pressure (N/mm^2 or MPa)
-            scale_factor = self.walker_weight_n / (total_raw_sum * cell_area_mm2)
-            self.kernel = raw_kernel * scale_factor
+            scale_factor = (self.walker_weight_n * impact_factor) / (total_raw_sum * cell_area_mm2)
+            kernel = raw_kernel * scale_factor
         else:
-            self.kernel = raw_kernel
+            kernel = raw_kernel
 
-        # Calculate single step wear kernel based on Archard equation
-        # Depth = (k / H) * Pressure * SlidingDist
-        # Pressure is in MPa (N/mm^2), Hardness in MPa, Dist in mm -> Depth in mm
-        
+        # Calculate wear kernel
         if self.hardness_mpa > 0:
             wear_factor = (self.wear_coefficient / self.hardness_mpa) * self.sliding_distance_mm
-            self.single_step_wear_kernel = self.kernel * wear_factor
+            wear_kernel = kernel * wear_factor
         else:
-            self.single_step_wear_kernel = np.zeros_like(self.kernel)
+            wear_kernel = np.zeros_like(kernel)
+            
+        return kernel, wear_kernel
 
-    def get_default_traffic_distribution(self, x_offset=0, y_offset=0, x_spread=200, y_spread=100):
+    def get_single_traffic_distribution(self, x_offset=0, y_offset=0, x_spread=200, y_spread=100):
         """
-        Generates a default Gaussian traffic distribution map (probability density).
-        Returns a grid of size (ny, nx) representing the probability of a step centering at each cell.
+        生成单人通行的足迹分布（单峰正态分布）。
+        Generates single-file traffic distribution (Single Gaussian Peak).
         """
         x = np.linspace(0, self.length, self.nx)
         y = np.linspace(0, self.width, self.ny)
@@ -119,8 +135,59 @@ class StairWearMVP:
             
         return dist
 
+    def get_parallel_traffic_distribution(self, separation=800, y_offset=0, x_spread=150, y_spread=100):
+        """
+        生成并行通行的足迹分布（双峰正态分布）。
+        Generates parallel traffic distribution (Bi-modal Gaussian).
+        
+        Args:
+            separation (float): Distance between two people in mm (along length/width depending on orientation).
+                                Assuming separation is along the length (X-axis) for side-by-side walking.
+            y_offset (float): Offset from center in Y direction.
+            x_spread (float): Spread in X direction for each person.
+            y_spread (float): Spread in Y direction.
+        """
+        x = np.linspace(0, self.length, self.nx)
+        y = np.linspace(0, self.width, self.ny)
+        X, Y = np.meshgrid(x, y)
+        
+        # Centers for two people walking side-by-side
+        # Center of the stair
+        cx_base = self.length / 2
+        cy = (self.width / 2) + y_offset
+        
+        # Left and Right person positions
+        cx_left = cx_base - (separation / 2)
+        cx_right = cx_base + (separation / 2)
+        
+        # Gaussian distributions for both
+        dist_left = np.exp(-(((X - cx_left)**2) / (2 * x_spread**2) + ((Y - cy)**2) / (2 * y_spread**2)))
+        dist_right = np.exp(-(((X - cx_right)**2) / (2 * x_spread**2) + ((Y - cy)**2) / (2 * y_spread**2)))
+        
+        # Combine
+        dist = dist_left + dist_right
+        
+        # Normalize so sum is 1 (Probability Mass Function representing ONE "parallel event" - 2 people)
+        # Note: If we treat "1 parallel event" as "2 people crossing", the integral should sum to 1 event.
+        # But later we multiply by "number of people". 
+        # If 'people_per_year' counts INDIVIDUALS, then a parallel event of 2 people consumes 2 counts?
+        # Let's clarify: The input is "people_per_year".
+        # If 20% people walk in parallel, that means 0.2 * N people are involved in parallel walking.
+        # That means (0.2 * N) / 2 "parallel groups" passed by.
+        # The distribution should represent the spatial probability of *a person* in that mode.
+        # So we normalize the sum to 1. This means "Given a person is walking in parallel mode, where are they likely to step?"
+        
+        total = np.sum(dist)
+        if total > 0:
+            dist = dist / total
+            
+        return dist
+
     def simulate_wear(self, years, people_per_year, 
-                      traffic_dist_func=None, 
+                      parallel_ratio=0,
+                      up_down_split=1,
+                      traffic_dist_func_single=None, 
+                      traffic_dist_func_parallel=None,
                       correction_func=None):
         """
         Simulates wear over a period.
@@ -128,114 +195,180 @@ class StairWearMVP:
         Args:
             years (float): Number of years.
             people_per_year (float): Number of people (footsteps) per year.
-            traffic_dist_func (callable): Function returning (ny, nx) array of step probabilities.
-            correction_func (callable): Function returning correction coefficient (scalar or array).
+            parallel_ratio (float): Fraction of people walking in parallel (0.0 to 1.0).
+            up_down_split (float): Fraction of people walking UP (0.0 to 1.0).
+            traffic_dist_func_single (callable): Custom function for single traffic.
+            traffic_dist_func_parallel (callable): Custom function for parallel traffic.
+            correction_func (callable): Function returning correction coefficient.
         """
-        if self.single_step_wear_kernel is None:
-            self.create_footprint_kernel()
+        if self.wear_kernel_up is None or self.wear_kernel_down is None:
+            self.init_kernels()
             
-        # 1. Determine Total Traffic Volume (Total Steps)
-        total_steps = years * people_per_year
+        # 1. Determine Total Traffic Volume
+        total_people = years * people_per_year
         
-        # 2. Get Traffic Distribution (Where steps happen)
-        if traffic_dist_func is None:
-            # Default: Centered with some spread
-            traffic_map_prob = self.get_default_traffic_distribution()
-        else:
-            traffic_map_prob = traffic_dist_func()
+        people_up = total_people * up_down_split
+        people_down = total_people * (1 - up_down_split)
+        
+        # Helper to process one direction
+        def process_direction(n_people, kernel, direction_label):
+            if n_people <= 0:
+                return np.zeros_like(self.stair_grid)
+                
+            # Split into single and parallel groups
+            people_p = n_people * parallel_ratio
+            people_s = n_people * (1 - parallel_ratio)
             
-        # Convert probability map to actual step count map
-        traffic_map_counts = traffic_map_prob * total_steps
-        
-        # 3. Apply Correction Coefficient
-        if correction_func is not None:
-            correction = correction_func()
-            traffic_map_counts = traffic_map_counts * correction
+            # Determine offset
+            # Center is 200.
+            # Up: Closer to outer edge (Nosing). +50mm (Shift to 250).
+            # Down: -20mm (Shift to 180).
             
-        # 4. Convolve Traffic Map with Single Step Wear Kernel
-        # We use 'same' to keep the grid size consistent, assuming steps near edges are handled by padding 0
-        # However, for steps, the kernel (foot) has physical size.
-        # If the 'traffic map' represents the CENTER of the foot, convolution is the correct operation
-        # to accumulate wear from the footprint kernel placed at each center.
-        
-        total_wear = convolve2d(traffic_map_counts, self.single_step_wear_kernel, mode='same', boundary='fill', fillvalue=0)
-        
+            y_offset_dir = 0
+            if direction_label == 'up':
+                y_offset_dir = 200
+            elif direction_label == 'down':
+                y_offset_dir = 0
+            
+            # Get Traffic Distributions
+            if traffic_dist_func_single is None:
+                prob_map_single = self.get_single_traffic_distribution(y_offset=y_offset_dir)
+            else:
+                prob_map_single = traffic_dist_func_single()
+                
+            if traffic_dist_func_parallel is None:
+                prob_map_parallel = self.get_parallel_traffic_distribution(y_offset=y_offset_dir)
+            else:
+                prob_map_parallel = traffic_dist_func_parallel()
+                
+            # Calculate Step Counts Maps
+            map_counts = (prob_map_single * people_s) + (prob_map_parallel * people_p)
+            
+            # Apply Correction
+            if correction_func is not None:
+                map_counts *= correction_func()
+                
+            # Convolve
+            return convolve2d(map_counts, kernel, mode='same', boundary='fill', fillvalue=0)
+
         # Accumulate wear
-        self.stair_grid += total_wear
-
-    def visualize(self, filename='mvp_visualization.png'):
-        """
-        Visualizes the stair wear simulation results, including a 3D surface plot.
-        """
-        if self.single_step_wear_kernel is None:
-            self.create_footprint_kernel()
-
-        fig = plt.figure(figsize=(15, 18))
+        wear_up = process_direction(people_up, self.wear_kernel_up, 'up')
+        wear_down = process_direction(people_down, self.wear_kernel_down, 'down')
         
-        # Grid layout: 3 rows, 2 columns
-        gs = fig.add_gridspec(3, 2, height_ratios=[1, 1, 1.5])
-        
+        self.stair_grid += (wear_up + wear_down)
+
+    def visualize(self, output_dir='output'):
+        """
+        Visualizes the stair wear simulation results.
+        Saves separate PNG files for each plot to the output directory.
+        """
+        if not os.path.exists(output_dir):
+            os.makedirs(output_dir)
+            
+        if self.wear_kernel_up is None or self.wear_kernel_down is None:
+            self.init_kernels()
+
+        print(f"Saving visualizations to {os.path.abspath(output_dir)}...")
+
         # 1. Wear Depth Map (2D)
-        ax1 = fig.add_subplot(gs[0, 0])
-        im1 = ax1.imshow(self.stair_grid, cmap='inferno_r', origin='lower', 
-                           extent=[0, self.length, 0, self.width], aspect='equal')
-        ax1.set_title(f"Stair Wear Depth (Max: {np.max(self.stair_grid):.4f} mm)")
-        ax1.set_xlabel("Stair Length (mm)")
-        ax1.set_ylabel("Stair Tread Depth (mm)")
-        plt.colorbar(im1, ax=ax1, label='Wear Depth (mm)')
+        plt.figure(figsize=(10, 5))
+        # Origin 'upper' places index 0 at top. 
+        # If Y=0 is Wall and Y=400 is Nosing, and we want Nosing (Outer Edge) at Screen (Bottom),
+        # we want Y=400 at Bottom. 
+        # With origin='upper', Y=0 is Top, Y=400 is Bottom. This matches "Outer edge facing screen".
+        # cmap 'inferno': Black (Low/No Wear) -> Yellow (High/Deep Wear).
+        # This matches 3D plot where Deep Wear (Low Z) is Yellow (via inferno_r on negative Z).
+        plt.imshow(self.stair_grid, cmap='inferno', origin='upper', 
+                   extent=[0, self.length, self.width, 0], aspect='equal')
+        plt.title(f"Stair Wear Depth (Max: {np.max(self.stair_grid):.4f} mm)")
+        plt.xlabel("Stair Length (mm)")
+        plt.ylabel("Stair Tread Depth (mm) [Bottom is Outer Edge]")
+        plt.colorbar(label='Wear Depth (mm)')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '1_wear_depth_map.png'))
+        plt.close()
         
-        # 2. Single Step Pressure/Wear Kernel
-        ax2 = fig.add_subplot(gs[0, 1])
-        im2 = ax2.imshow(self.single_step_wear_kernel, cmap='plasma', origin='lower',
-                           extent=[0, self.foot_width, 0, self.foot_length], aspect='equal')
-        ax2.set_title(f"Single Step Wear Kernel (Max: {np.max(self.single_step_wear_kernel):.2e} mm)")
-        ax2.set_xlabel("Foot Width (mm)")
-        ax2.set_ylabel("Foot Length (mm)")
-        plt.colorbar(im2, ax=ax2, label='Wear Depth per Step (mm)')
+        # 2. Kernel Up
+        plt.figure(figsize=(5, 8))
+        plt.imshow(self.wear_kernel_up, cmap='inferno', origin='lower',
+                   extent=[0, self.foot_width, 0, self.foot_length], aspect='equal')
+        plt.title(f"UP Step Wear Kernel\n(Max: {np.max(self.wear_kernel_up):.2e} mm)")
+        plt.xlabel("Foot Width (mm)")
+        plt.ylabel("Foot Length (mm)")
+        plt.colorbar(label='Wear Depth (mm)')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '2_kernel_up.png'))
+        plt.close()
         
-        # 3. Cross Section along Length (at mid-width)
-        ax3 = fig.add_subplot(gs[1, 0])
-        mid_y_idx = self.ny // 2
-        ax3.plot(np.linspace(0, self.length, self.nx), self.stair_grid[mid_y_idx, :], label='Mid-Depth Profile')
-        ax3.set_title("Cross Section: Wear along Length (Center)")
-        ax3.set_xlabel("Stair Length (mm)")
-        ax3.set_ylabel("Wear Depth (mm)")
-        ax3.grid(True)
-        ax3.invert_yaxis() # Depth goes down
+        # 3. Kernel Down
+        plt.figure(figsize=(5, 8))
+        plt.imshow(self.wear_kernel_down, cmap='inferno', origin='lower',
+                   extent=[0, self.foot_width, 0, self.foot_length], aspect='equal')
+        plt.title(f"DOWN Step Wear Kernel\n(Max: {np.max(self.wear_kernel_down):.2e} mm)")
+        plt.xlabel("Foot Width (mm)")
+        plt.ylabel("Foot Length (mm)")
+        plt.colorbar(label='Wear Depth (mm)')
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '3_kernel_down.png'))
+        plt.close()
         
-        # 4. Cross Section along Width/Depth (at mid-length)
-        ax4 = fig.add_subplot(gs[1, 1])
-        mid_x_idx = self.nx // 2
-        ax4.plot(np.linspace(0, self.width, self.ny), self.stair_grid[:, mid_x_idx], label='Mid-Length Profile', color='orange')
-        ax4.set_title("Cross Section: Wear along Tread Depth (Center)")
-        ax4.set_xlabel("Stair Tread Depth (mm)")
-        ax4.set_ylabel("Wear Depth (mm)")
-        ax4.grid(True)
-        ax4.invert_yaxis()
+        # 4. Cross Sections
+        # Length
+        plt.figure(figsize=(10, 4))
+        mid_y = self.ny // 2
+        plt.plot(np.linspace(0, self.length, self.nx), self.stair_grid[mid_y, :], label='Mid-Depth Profile')
+        plt.title("Cross Section: Wear along Length (Center)")
+        plt.xlabel("Length (mm)")
+        plt.ylabel("Wear Depth (mm)")
+        plt.gca().invert_yaxis()
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '4_profile_length.png'))
+        plt.close()
+        
+        # Width
+        plt.figure(figsize=(6, 4))
+        mid_x = self.nx // 2
+        plt.plot(np.linspace(0, self.width, self.ny), self.stair_grid[:, mid_x], color='orange', label='Mid-Length Profile')
+        plt.title("Cross Section: Wear along Width (Center)")
+        plt.xlabel("Width/Depth (mm)")
+        plt.ylabel("Wear Depth (mm)")
+        plt.gca().invert_yaxis()
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(os.path.join(output_dir, '5_profile_width.png'))
+        plt.close()
 
         # 5. 3D Surface Plot
-        ax5 = fig.add_subplot(gs[2, :], projection='3d')
+        fig = plt.figure(figsize=(12, 10))
+        ax = fig.add_subplot(111, projection='3d')
         x = np.linspace(0, self.length, self.nx)
         y = np.linspace(0, self.width, self.ny)
         X, Y = np.meshgrid(x, y)
         Z = -self.stair_grid # 负值表示磨损深度
         
-        surf = ax5.plot_surface(X, Y, Z, cmap='inferno_r', linewidth=0, antialiased=False)
-        ax5.set_title("3D Stair Surface Model (Wear Exaggerated)")
-        ax5.set_xlabel("Length (mm)")
-        ax5.set_ylabel("Depth (mm)")
-        ax5.set_zlabel("Height (mm)")
+        surf = ax.plot_surface(X, Y, Z, cmap='inferno_r', linewidth=0, antialiased=False)
+        ax.set_title("3D Stair Surface Model (Wear Exaggerated)")
+        ax.set_xlabel("Length (mm)")
+        ax.set_ylabel("Depth (mm)")
+        ax.set_zlabel("Height (mm)")
         
-        # 设置3D图的长宽比与实际台阶比例一致
-        # Z轴为了可视化效果进行夸张处理，设置为宽度的1/3
-        ax5.set_box_aspect((self.length, self.width, self.width / 3))
+        # 设置3D图的长宽比
+        ax.set_box_aspect((self.length, self.width, self.width / 3))
         
-        fig.colorbar(surf, ax=ax5, shrink=0.5, aspect=10, label='Surface Height (mm)')
+        # 调整视角：外缘（Nosing, Y=max）朝向屏幕
+        # azim=90 表示从Y轴正向看去
+        ax.view_init(elev=40, azim=110) 
+        
+        fig.colorbar(surf, ax=ax, shrink=0.5, aspect=10, label='Surface Height (mm)')
 
         plt.tight_layout()
-        plt.savefig(filename)
-        print(f"Visualization saved to {os.path.abspath(filename)}")
+        plt.savefig(os.path.join(output_dir, '6_surface_3d.png'))
         plt.close()
+        
+        print("Done.")
 
 if __name__ == "__main__":
     print("Initializing Stair Wear MVP...")
@@ -246,7 +379,7 @@ if __name__ == "__main__":
     # Simulate 100 years, 500 people per day -> ~182,500 people/year
     # Total ~18 million steps
     years = 100
-    people_per_day = 5000
+    people_per_day = 500
     mvp.simulate_wear(years=years, people_per_year=people_per_day * 365)
     
     print(f"Max Wear Depth: {np.max(mvp.stair_grid):.4f} mm")
